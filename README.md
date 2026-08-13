@@ -26,6 +26,7 @@ python parts/bracket_L.py --leg-a 60 --thickness 5 --screw M5
 python parts/box_with_lid.py --inner-l 80 --inner-w 50 --inner-d 30
 python parts/knob.py --shaft d --shaft-dia 6 --flat-depth 1.5
 python parts/wall_hook.py --arm-len 40
+python parts/dual_ring_bar.py --span 160 --ring-id 42 --ring-od 55
 ```
 
 ไฟล์ผลลัพธ์อยู่ในโฟลเดอร์ `out/` — ได้ 3 ฟอร์แมตต่อชิ้น:
@@ -47,6 +48,7 @@ python parts/wall_hook.py --arm-len 40
 | `parts/wall_hook.py` | ตะขอแขวนผนังตัว J พร้อมรูสกรู |
 | `parts/box_with_lid.py` | กล่อง+ฝาสวม ระบุขนาด "ภายใน" แล้วคิดค่าเผื่อฝาให้เอง |
 | `parts/knob.py` | ลูกบิดสวมแกนกลม / แกนปาด D / หกเหลี่ยม |
+| `parts/dual_ring_bar.py` | วงแหวนคู่เชื่อมด้วยคาน คอบานแบบ loft + รู/slot ลดน้ำหนัก |
 
 ## จุดเด่นเรื่อง true-to-scale
 

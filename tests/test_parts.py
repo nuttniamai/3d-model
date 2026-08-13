@@ -117,6 +117,37 @@ def test_knob_shafts(tmp_path, shaft):
     assert_watertight(part, f"knob_{shaft}", tmp_path)
 
 
+def test_dual_ring_bar(tmp_path):
+    mod = load_part("dual_ring_bar")
+    p = dict(mod.PARAMS)
+    part = mod.build(p)
+    x, y, z = bbox(part)
+    # ความยาวรวม ~ span + ring_od (บวกผลจากมุมเอียงเล็กน้อย)
+    assert p["span"] <= x <= p["span"] + p["ring_od"] + p["ring_w"]
+    assert math.isclose(y, p["ring_od"], abs_tol=TOL)
+    # ปริมาตรน้อยกว่าก้อนตัน = รู/slot/บอร์วงแหวนถูกเจาะจริง
+    assert part.volume < x * y * z * 0.35
+    assert_watertight(part, "dual_ring_bar", tmp_path)
+
+
+def test_dual_ring_bar_custom(tmp_path):
+    mod = load_part("dual_ring_bar")
+    p = dict(mod.PARAMS, span=120.0, ring_od=40.0, ring_id=30.0,
+             ring_tilt=0.0, holes_n=2, slot_l=30.0)
+    part = mod.build(p)
+    x, y, z = bbox(part)
+    assert math.isclose(x, 120.0 + 40.0, abs_tol=0.2)  # tilt 0 -> span + ring_od พอดี
+    assert math.isclose(z, p["ring_w"], abs_tol=TOL)
+    assert_watertight(part, "dual_ring_bar_custom", tmp_path)
+
+
+def test_dual_ring_bar_thin_wall():
+    mod = load_part("dual_ring_bar")
+    p = dict(mod.PARAMS, ring_id=54.0, ring_od=55.0)
+    with pytest.raises(ValueError):
+        mod.build(p)
+
+
 def test_fdm_hole_compensation():
     # รูสำหรับแกน 8 mm แบบ slide ต้องใหญ่กว่าแกนจริงเสมอ
     d = fdm.hole_dia(8.0, fdm.FIT_SLIDE)
