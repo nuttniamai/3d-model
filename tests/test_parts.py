@@ -11,6 +11,7 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from build123d import GeomType  # noqa: E402
 from partkit import fdm  # noqa: E402
 from partkit.export import export_part  # noqa: E402
 
@@ -142,6 +143,34 @@ def test_dual_ring_bar_strap_section(tmp_path):
     assert math.isclose(z, p["wall"] + rise, abs_tol=0.15)
     assert math.isclose(strap.bounding_box().min.Z, 0.0, abs_tol=TOL)  # ก้นแตะเตียง
     assert_watertight(strap, "dual_ring_bar_strap", tmp_path)
+
+
+def test_dual_ring_bar_flat_section(tmp_path):
+    """ชิ้นแบนทดสอบ: กว้างเท่าความยาวส่วนโค้งที่คลี่ออก และเจาะรูครบ"""
+    mod = load_part("dual_ring_bar")
+    p = dict(mod.PARAMS, section="flat")
+    flat = mod.build(p)["flat"]
+    x, y, z = bbox(flat)
+    assert math.isclose(x, 2 * p["flare_x"], abs_tol=TOL)
+    # ความกว้าง = ความยาวส่วนโค้ง 2·r·θ ไม่ใช่ระยะคอร์ด 2·r·sin(θ)
+    assert math.isclose(y, 2 * p["r_out"] * math.radians(p["strap_ang"]), abs_tol=TOL)
+    assert math.isclose(z, p["flat_t"], abs_tol=TOL)
+    assert flat.volume < x * y * z * 0.85          # รู/สลอตถูกเจาะจริง
+    assert_watertight(flat, "dual_ring_bar_flat", tmp_path)
+
+
+def test_dual_ring_bar_flat_matches_curved_hole_positions():
+    """หัวใจของชิ้นทดสอบ: ตำแหน่งรูตามแนวยาวต้องตรงกับชิ้นโค้งเป๊ะ"""
+    mod = load_part("dual_ring_bar")
+    flat = mod.build(dict(mod.PARAMS, section="flat"))["flat"]
+    strap = mod.build(dict(mod.PARAMS, section="strap"))["strap"]
+    # ทั้งคู่ถูกจัดกึ่งกลางแล้ว จึงเทียบตำแหน่งผิวรูตามแกน X ได้ตรง ๆ
+    # กรองด้วยความยาวตามแกน X: ผิวรูสั้น (<=Ø ของรู) ส่วนผิวเปลือกโค้งยาวทั้งชิ้น
+    def hole_faces(part):
+        return sorted(round(f.center().X, 3) for f in part.faces()
+                      if f.geom_type == GeomType.CYLINDER
+                      and f.bounding_box().size.X < 20)
+    assert hole_faces(flat) == hole_faces(strap)
 
 
 def test_dual_ring_bar_custom(tmp_path):

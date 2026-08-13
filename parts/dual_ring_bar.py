@@ -16,8 +16,9 @@
 ส่วนสายคาดและตำแหน่งรูวัดได้แม่น ใช้ทาบเทียบกับของจริงได้
 
     python parts/dual_ring_bar.py                    # ทั้งชิ้น
-    python parts/dual_ring_bar.py --section strap    # เฉพาะสายคาด (ทดสอบตำแหน่งรู)
-    python parts/dual_ring_bar.py --section sleeve   # เฉพาะปลอก (ทดสอบความพอดีรู)
+    python parts/dual_ring_bar.py --section flat     # สายคาดคลี่แบน (ทดสอบตำแหน่งรู - เร็วสุด)
+    python parts/dual_ring_bar.py --section strap    # สายคาดโค้งจริง
+    python parts/dual_ring_bar.py --section sleeve   # เฉพาะปลอก (ทดสอบความพอดีรูสวม)
 """
 import sys, os, math
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -62,7 +63,9 @@ PARAMS = dict(
     vslot_x=-65.2,
     vslot_pitch=8.45,
     vslot_z=-0.5,
-    section="full",    # full | strap | sleeve — ตัดเฉพาะส่วนมาปริ้นทดสอบ
+    section="full",    # full | flat | strap | sleeve — เลือกส่วนที่จะสร้าง
+    flat_t=2.0,        # ความหนาของชิ้นแบนทดสอบ (หนากว่าผนังจริงเพื่อไม่ให้โก่ง
+                       # ตั้ง --flat-t 1 ถ้าอยากได้ความหนาจริง)
 )
 
 FITS = dict(press=fdm.FIT_PRESS, tight=fdm.FIT_TIGHT,
@@ -118,49 +121,11 @@ def _lay_flat(part):
     return Pos(-bb.center().X, -bb.center().Y, -bb.min.Z) * part
 
 
-def _section(part, p, which):
-    """ตัดเฉพาะบางส่วนมาปริ้นทดสอบ พร้อมจัดท่าวางเตียงให้แล้ว"""
-    if which == "strap":
-        # สายคาดช่วงที่มุมคงที่ แล้วพลิกให้โค้งนูนขึ้น (โค้งขึ้น = ไม่ต้อง support)
-        keep = Box(2 * p["flare_x"], 500, 500)
-        return _lay_flat(Rot(-90, 0, 0) * (part & keep))
+def _cut_features(part, p):
+    """เจาะรู/สลอตทั้งหมด — ทุกช่องเจาะทะลุตามแกน Y (ทิศถอดแม่พิมพ์)
 
-    if which == "sleeve":
-        # ปลอกขวาเต็มวง ตั้งแกนรูขึ้น (ไม่ต้อง support ใช้เช็คความพอดีรูสวม)
-        x_mid = (p["ring_x"] + p["length"] / 2) / 2
-        keep = Pos(x_mid, 0, 0) * Box(p["length"] / 2 - p["ring_x"], 500, 500)
-        return _lay_flat(Rot(0, 90, 0) * (part & keep))
-
-    raise ValueError(f"section ต้องเป็น full / strap / sleeve (ได้ '{which}')")
-
-
-def build(p):
-    bore = _bore_dia(p)
-    if p["ring_od_out"] - bore < 2 * fdm.MIN_WALL - 1e-6:   # เผื่อ float noise ที่ขอบพอดี
-        raise ValueError(
-            f"ผนังปลอกบางเกินไป: ring_od_out ต้อง >= {bore + 2 * fdm.MIN_WALL:.1f} mm")
-    if p["wall"] < 0.4:
-        raise ValueError("wall บางกว่าหัวฉีด 0.4 mm ปริ้นไม่ได้")
-
-    x_end = p["length"] / 2
-    if not (0 < p["flare_x"] < p["ring_x"] < x_end):
-        raise ValueError("ต้องเรียงลำดับ flare_x < ring_x < length/2")
-
-    # ---- สายคาดช่วงมุมคงที่ ----
-    part = extrude(_sector_face(p, p["strap_ang"], -p["flare_x"]),
-                   2 * p["flare_x"])
-
-    # ---- ช่วงบาน: loft จากมุมสายคาดไปมุมที่กว้างขึ้น จนถึงขอบปลอก ----
-    flares = [loft([_sector_face(p, p["strap_ang"], s * p["flare_x"]),
-                    _sector_face(p, p["flare_ang"], s * p["ring_x"])])
-              for s in (1, -1)]
-
-    # ---- ปลอกเต็มวงสองข้าง ----
-    rings = [_sleeve(p, bore, s) for s in (1, -1)]
-
-    part = part.fuse(*flares, *rings, tol=1e-3)
-
-    # ---- เจาะรู: ทุกรูเจาะทะลุตามแกน Y (ทิศถอดแม่พิมพ์) ----
+    ใช้ร่วมกันทั้งชิ้นโค้งจริงและชิ้นแบนสำหรับทดสอบ ตำแหน่งรูจึงตรงกันเสมอ
+    """
     def cut_y(shape_2d, x, z):
         sk = Plane.XZ.offset(-100) * Pos(x, z, 0) * shape_2d
         return extrude(sk, 200)
@@ -180,8 +145,74 @@ def build(p):
         vx = p["vslot_x"] + i * p["vslot_pitch"]
         part -= cut_y(Rot(0, 0, 90) * SlotOverall(p["vslot_h"], p["vslot_w"]),
                       vx, p["vslot_z"])
+    return part
+
+
+def _flat_blank(p):
+    """แผ่นแบน = สายคาดที่ "คลี่" ออก วางตำแหน่งเดียวกับสายคาดจริง (หนาตามแกน Y)
+
+    ความกว้าง = ความยาวส่วนโค้งจริง (2·r·θ) ไม่ใช่ระยะคอร์ด จึงเป็นการคลี่ที่ถูกต้อง
+    ม้วนกลับรัศมี r_out เมื่อไรก็ได้รูปเดิม
+    ตำแหน่งรูตามแนวยาว (X) เท่ากับของโค้งเป๊ะ ส่วนแนวขวางต่างไม่ถึง 0.001 mm
+    เพราะรูทุกรูอยู่ห่างแนวกลางท้องไม่เกิน 1.2 mm
+    """
+    t = p["flat_t"]
+    width = 2 * p["r_out"] * math.radians(p["strap_ang"])
+    return Pos(0, -p["r_out"] + t / 2, 0) * Box(2 * p["flare_x"], t, width)
+
+
+def _section(part, p, which):
+    """ตัดเฉพาะบางส่วนมาปริ้นทดสอบ พร้อมจัดท่าวางเตียงให้แล้ว"""
+    if which == "strap":
+        # สายคาดช่วงที่มุมคงที่ แล้วพลิกให้โค้งนูนขึ้น (โค้งขึ้น = ไม่ต้อง support)
+        keep = Box(2 * p["flare_x"], 500, 500)
+        return _lay_flat(Rot(-90, 0, 0) * (part & keep))
+
+    if which == "sleeve":
+        # ปลอกขวาเต็มวง ตั้งแกนรูขึ้น (ไม่ต้อง support ใช้เช็คความพอดีรูสวม)
+        x_mid = (p["ring_x"] + p["length"] / 2) / 2
+        keep = Pos(x_mid, 0, 0) * Box(p["length"] / 2 - p["ring_x"], 500, 500)
+        return _lay_flat(Rot(0, 90, 0) * (part & keep))
+
+    raise ValueError(f"section ต้องเป็น full / flat / strap / sleeve (ได้ '{which}')")
+
+
+def build(p):
+    bore = _bore_dia(p)
+    if p["ring_od_out"] - bore < 2 * fdm.MIN_WALL - 1e-6:   # เผื่อ float noise ที่ขอบพอดี
+        raise ValueError(
+            f"ผนังปลอกบางเกินไป: ring_od_out ต้อง >= {bore + 2 * fdm.MIN_WALL:.1f} mm")
+    if p["wall"] < 0.4:
+        raise ValueError("wall บางกว่าหัวฉีด 0.4 mm ปริ้นไม่ได้")
+
+    x_end = p["length"] / 2
+    if not (0 < p["flare_x"] < p["ring_x"] < x_end):
+        raise ValueError("ต้องเรียงลำดับ flare_x < ring_x < length/2")
 
     which = str(p["section"]).lower()
+
+    # ---- ชิ้นแบนสำหรับทดสอบตำแหน่งรู: ข้ามการสร้างส่วนโค้ง/ปลอกทั้งหมด ----
+    if which == "flat":
+        blank = _cut_features(_flat_blank(p), p)
+        # พลิกให้ผิว "ด้านนอก" ของชิ้นจริงหงายขึ้น (เทียบกับของจริงได้ตรงด้าน)
+        return {"flat": _lay_flat(Rot(-90, 0, 0) * blank)}
+
+    # ---- สายคาดช่วงมุมคงที่ ----
+    part = extrude(_sector_face(p, p["strap_ang"], -p["flare_x"]),
+                   2 * p["flare_x"])
+
+    # ---- ช่วงบาน: loft จากมุมสายคาดไปมุมที่กว้างขึ้น จนถึงขอบปลอก ----
+    flares = [loft([_sector_face(p, p["strap_ang"], s * p["flare_x"]),
+                    _sector_face(p, p["flare_ang"], s * p["ring_x"])])
+              for s in (1, -1)]
+
+    # ---- ปลอกเต็มวงสองข้าง ----
+    rings = [_sleeve(p, bore, s) for s in (1, -1)]
+
+    part = part.fuse(*flares, *rings, tol=1e-3)
+
+    part = _cut_features(part, p)
+
     if which != "full":
         return {which: _section(part, p, which)}
     return part
