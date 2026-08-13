@@ -45,17 +45,17 @@ PARAMS = dict(
                        # press/tight/slide/loose = ตีความ ring_bore เป็นขนาด
                        # ชิ้นจริงที่จะสวม แล้วเผื่อค่าหด FDM ให้อัตโนมัติ
     holes_dia=11.2,    # รูใหญ่ลดน้ำหนัก
-    hole1_x=-36.55,
+    hole1_x=-38.0,
     hole2_x=-7.25,
     holes_z=-0.9,
     vent_n=5,          # รูจิ๋วระบายอากาศเรียงแถว (0 = ไม่เจาะ)
     vent_dia=1.25,
-    vent_pitch=2.175,
+    vent_pitch=2.2,
     vent_x=-23.45,     # ศูนย์กลางของแถว
     vent_z=-1.15,
-    slot_l=44.0,       # สลอตยาว (0 = ไม่เจาะ)
-    slot_w=13.5,
-    slot_x=34.2,
+    slot_l=46.5,       # สลอตยาว (0 = ไม่เจาะ)
+    slot_w=15.0,
+    slot_x=36.2,
     slot_z=-0.3,
     vslot_n=2,         # สลอตตั้งบนช่วงบานฝั่งซ้าย (0 = ไม่เจาะ)
     vslot_w=6.0,
@@ -64,8 +64,8 @@ PARAMS = dict(
     vslot_pitch=8.45,
     vslot_z=-0.5,
     section="full",    # full | flat | strap | sleeve — เลือกส่วนที่จะสร้าง
-    flat_t=2.0,        # ความหนาของชิ้นแบนทดสอบ (หนากว่าผนังจริงเพื่อไม่ให้โก่ง
-                       # ตั้ง --flat-t 1 ถ้าอยากได้ความหนาจริง)
+    flat_t=1.0,        # ความหนาชิ้นแบนทดสอบ (เท่าผนังจริง ประหยัดเส้น)
+    flat_margin=3.0,   # เนื้อขอบที่เหลือรอบช่องนอกสุดของชิ้นแบน
 )
 
 FITS = dict(press=fdm.FIT_PRESS, tight=fdm.FIT_TIGHT,
@@ -148,6 +148,23 @@ def _cut_features(part, p):
     return part
 
 
+def _feature_span(p):
+    """ขอบซ้ายสุด-ขวาสุดของทุกช่องที่เจาะ (พิกัด x)"""
+    xs = []
+    for hx in (p["hole1_x"], p["hole2_x"]):
+        xs += [hx - p["holes_dia"] / 2, hx + p["holes_dia"] / 2]
+    n = int(p["vent_n"])
+    if n > 0:
+        reach = (n - 1) / 2 * p["vent_pitch"] + p["vent_dia"] / 2
+        xs += [p["vent_x"] - reach, p["vent_x"] + reach]
+    if p["slot_l"] > 0:
+        xs += [p["slot_x"] - p["slot_l"] / 2, p["slot_x"] + p["slot_l"] / 2]
+    for i in range(int(p["vslot_n"])):
+        vx = p["vslot_x"] + i * p["vslot_pitch"]
+        xs += [vx - p["vslot_w"] / 2, vx + p["vslot_w"] / 2]
+    return min(xs), max(xs)
+
+
 def _flat_blank(p):
     """แผ่นแบน = สายคาดที่ "คลี่" ออก วางตำแหน่งเดียวกับสายคาดจริง (หนาตามแกน Y)
 
@@ -155,10 +172,15 @@ def _flat_blank(p):
     ม้วนกลับรัศมี r_out เมื่อไรก็ได้รูปเดิม
     ตำแหน่งรูตามแนวยาว (X) เท่ากับของโค้งเป๊ะ ส่วนแนวขวางต่างไม่ถึง 0.001 mm
     เพราะรูทุกรูอยู่ห่างแนวกลางท้องไม่เกิน 1.2 mm
+
+    ความยาวขยายเองให้ครอบทุกช่องเต็มรูป + เนื้อขอบ flat_margin จะได้ไม่มีช่องไหน
+    ถูกตัดขาดที่ขอบชิ้น (วัดเทียบง่าย) และปรับตามพารามิเตอร์ใหม่ได้เองเสมอ
     """
     t = p["flat_t"]
+    lo, hi = _feature_span(p)
+    half = max(p["flare_x"], abs(lo) + p["flat_margin"], hi + p["flat_margin"])
     width = 2 * p["r_out"] * math.radians(p["strap_ang"])
-    return Pos(0, -p["r_out"] + t / 2, 0) * Box(2 * p["flare_x"], t, width)
+    return Pos(0, -p["r_out"] + t / 2, 0) * Box(2 * half, t, width)
 
 
 def _section(part, p, which):

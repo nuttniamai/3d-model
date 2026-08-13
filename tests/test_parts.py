@@ -151,7 +151,6 @@ def test_dual_ring_bar_flat_section(tmp_path):
     p = dict(mod.PARAMS, section="flat")
     flat = mod.build(p)["flat"]
     x, y, z = bbox(flat)
-    assert math.isclose(x, 2 * p["flare_x"], abs_tol=TOL)
     # ความกว้าง = ความยาวส่วนโค้ง 2·r·θ ไม่ใช่ระยะคอร์ด 2·r·sin(θ)
     assert math.isclose(y, 2 * p["r_out"] * math.radians(p["strap_ang"]), abs_tol=TOL)
     assert math.isclose(z, p["flat_t"], abs_tol=TOL)
@@ -159,18 +158,29 @@ def test_dual_ring_bar_flat_section(tmp_path):
     assert_watertight(flat, "dual_ring_bar_flat", tmp_path)
 
 
-def test_dual_ring_bar_flat_matches_curved_hole_positions():
-    """หัวใจของชิ้นทดสอบ: ตำแหน่งรูตามแนวยาวต้องตรงกับชิ้นโค้งเป๊ะ"""
+def test_dual_ring_bar_flat_encloses_every_feature():
+    """ทุกช่องต้องอยู่ในเนื้อชิ้นเต็มรูป ไม่มีช่องไหนถูกขอบชิ้นตัดขาด"""
     mod = load_part("dual_ring_bar")
-    flat = mod.build(dict(mod.PARAMS, section="flat"))["flat"]
-    strap = mod.build(dict(mod.PARAMS, section="strap"))["strap"]
-    # ทั้งคู่ถูกจัดกึ่งกลางแล้ว จึงเทียบตำแหน่งผิวรูตามแกน X ได้ตรง ๆ
-    # กรองด้วยความยาวตามแกน X: ผิวรูสั้น (<=Ø ของรู) ส่วนผิวเปลือกโค้งยาวทั้งชิ้น
+    p = dict(mod.PARAMS, section="flat")
+    flat = mod.build(p)["flat"]
+    lo, hi = mod._feature_span(p)
+    half = bbox(flat)[0] / 2
+    assert half >= max(abs(lo), hi) + p["flat_margin"] - TOL
+
+
+def test_dual_ring_bar_flat_matches_curved_hole_positions():
+    """หัวใจของชิ้นทดสอบ: ตำแหน่งรูตามแนวยาวต้องตรงกับชิ้นโค้งจริงเป๊ะ"""
+    mod = load_part("dual_ring_bar")
+    p = dict(mod.PARAMS)
+    flat = mod.build(dict(p, section="flat"))["flat"]
+    full = mod.build(dict(p, section="full"))
+    # ทั้งคู่จัดกึ่งกลางที่ x=0 จึงเทียบตำแหน่งผิวรูตามแกน X ได้ตรง ๆ
+    # กรองด้วยขนาดหน้า: ผิวของช่องเจาะเล็กกว่ารัศมีเปลือก ส่วนผิวเปลือก/รูปลอกใหญ่กว่า
     def hole_faces(part):
         return sorted(round(f.center().X, 3) for f in part.faces()
                       if f.geom_type == GeomType.CYLINDER
-                      and f.bounding_box().size.X < 20)
-    assert hole_faces(flat) == hole_faces(strap)
+                      and max(f.bounding_box().size) < p["r_out"])
+    assert hole_faces(flat) == hole_faces(full)
 
 
 def test_dual_ring_bar_custom(tmp_path):
