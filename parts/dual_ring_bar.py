@@ -9,7 +9,7 @@
   2) สายคาดใต้ท้อง กว้าง ±30° ผนังหนาแค่ 1.0 mm เชื่อมปลอกสองข้าง
   3) ช่วงบานที่สายคาดค่อย ๆ กว้างขึ้นจนกลืนเข้าปลอก
 - สายคาดเจาะ: รูใหญ่ Ø11.2 สองรู, รูจิ๋ว Ø1.25 ห้ารูเรียงกัน (ช่องระบายอากาศ),
-  สลอตยาว 44x13.5, สลอตตั้ง 6x13.5 สองช่องบนช่วงบานฝั่งซ้าย
+  สลอตยาว 46.5x15 ฝั่งขวา, รูกลม Ø13.5 บนช่วงบานฝั่งซ้าย
 
 *** สำคัญ: สายคาดเป็นผิวโค้ง ไม่ใช่แผ่นแบน และบางเพียง 1 mm ***
 ค่าปลอก/ช่วงบานเป็นค่าประมาณ เพราะ mesh ต้นฉบับหยาบมาก (3998 หน้า ไม่ปิดสนิท)
@@ -57,12 +57,9 @@ PARAMS = dict(
     slot_w=15.0,
     slot_x=36.2,
     slot_z=-0.3,
-    vslot_n=2,         # สลอตตั้งบนช่วงบานฝั่งซ้าย (0 = ไม่เจาะ)
-    vslot_w=6.0,
-    vslot_h=13.5,
-    vslot_x=-65.2,
-    vslot_pitch=8.45,
-    vslot_z=-0.5,
+    hole3_dia=13.5,    # รูกลมบนช่วงบานฝั่งซ้าย (0 = ไม่เจาะ)
+    hole3_x=-65.0,
+    hole3_z=-0.5,
     section="full",    # full | flat | strap | sleeve — เลือกส่วนที่จะสร้าง
     flat_t=1.0,        # ความหนาชิ้นแบนทดสอบ (เท่าผนังจริง ประหยัดเส้น)
     flat_margin=3.0,   # เนื้อขอบที่เหลือรอบช่องนอกสุดของชิ้นแบน
@@ -141,10 +138,8 @@ def _cut_features(part, p):
     if p["slot_l"] > 0:
         part -= cut_y(SlotOverall(p["slot_l"], p["slot_w"]), p["slot_x"], p["slot_z"])
 
-    for i in range(int(p["vslot_n"])):
-        vx = p["vslot_x"] + i * p["vslot_pitch"]
-        part -= cut_y(Rot(0, 0, 90) * SlotOverall(p["vslot_h"], p["vslot_w"]),
-                      vx, p["vslot_z"])
+    if p["hole3_dia"] > 0:
+        part -= cut_y(Circle(p["hole3_dia"] / 2), p["hole3_x"], p["hole3_z"])
     return part
 
 
@@ -159,9 +154,8 @@ def _feature_span(p):
         xs += [p["vent_x"] - reach, p["vent_x"] + reach]
     if p["slot_l"] > 0:
         xs += [p["slot_x"] - p["slot_l"] / 2, p["slot_x"] + p["slot_l"] / 2]
-    for i in range(int(p["vslot_n"])):
-        vx = p["vslot_x"] + i * p["vslot_pitch"]
-        xs += [vx - p["vslot_w"] / 2, vx + p["vslot_w"] / 2]
+    if p["hole3_dia"] > 0:
+        xs += [p["hole3_x"] - p["hole3_dia"] / 2, p["hole3_x"] + p["hole3_dia"] / 2]
     return min(xs), max(xs)
 
 

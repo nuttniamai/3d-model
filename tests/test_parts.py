@@ -186,7 +186,7 @@ def test_dual_ring_bar_flat_matches_curved_hole_positions():
 def test_dual_ring_bar_custom(tmp_path):
     mod = load_part("dual_ring_bar")
     p = dict(mod.PARAMS, length=150.0, flare_x=50.0, ring_x=66.0,
-             vent_n=0, slot_l=30.0, vslot_n=0, fit="slide")
+             vent_n=0, slot_l=30.0, hole3_dia=0.0, fit="slide")
     part = mod.build(p)
     x, y, z = bbox(part)
     assert math.isclose(x, 150.0, abs_tol=TOL)
