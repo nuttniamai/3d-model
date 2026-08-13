@@ -1,0 +1,6 @@
+build123d>=0.8
+trimesh>=4.0
+numpy
+pytest
+# ตัวเลือกเสริม: viewer สดใน VS Code (ไม่บังคับ)
+# ocp-vscode

@@ -1,0 +1,124 @@
+"""ตรวจว่าแม่แบบทุกชิ้น: สร้างได้, ขนาดตรงพารามิเตอร์ (true-to-scale),
+และ mesh ปิดสนิทพร้อมปริ้น
+"""
+import importlib.util
+import math
+import pathlib
+import sys
+
+import pytest
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from partkit import fdm  # noqa: E402
+from partkit.export import export_part  # noqa: E402
+
+TOL = 0.01  # mm — ความคลาดเคลื่อนเชิงตัวเลขของ kernel
+
+
+def load_part(name):
+    spec = importlib.util.spec_from_file_location(name, ROOT / "parts" / f"{name}.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def bbox(part):
+    bb = part.bounding_box()
+    return bb.size.X, bb.size.Y, bb.size.Z
+
+
+def assert_watertight(part, name, tmp_path):
+    import trimesh
+
+    export_part(part, name, out_dir=str(tmp_path), formats=("stl",),
+                check=False, verbose=False)
+    mesh = trimesh.load(tmp_path / f"{name}.stl")
+    assert mesh.is_watertight, f"{name}: mesh ไม่ปิดสนิท"
+
+
+def test_bracket_L(tmp_path):
+    mod = load_part("bracket_L")
+    p = dict(mod.PARAMS)
+    part = mod.build(p)
+    x, y, z = bbox(part)
+    assert math.isclose(x, p["leg_a"], abs_tol=TOL)
+    assert math.isclose(y, p["width"], abs_tol=TOL)
+    assert math.isclose(z, p["leg_b"], abs_tol=TOL)
+    assert_watertight(part, "bracket_L", tmp_path)
+
+
+def test_bracket_L_custom_params(tmp_path):
+    mod = load_part("bracket_L")
+    p = dict(mod.PARAMS, leg_a=70.0, leg_b=40.0, thickness=5.0, screw="M5")
+    part = mod.build(p)
+    x, y, z = bbox(part)
+    assert math.isclose(x, 70.0, abs_tol=TOL)
+    assert math.isclose(z, 40.0, abs_tol=TOL)
+    assert_watertight(part, "bracket_L_custom", tmp_path)
+
+
+def test_spacer(tmp_path):
+    mod = load_part("spacer")
+    p = dict(mod.PARAMS)
+    part = mod.build(p)
+    x, y, z = bbox(part)
+    assert math.isclose(x, p["outer_dia"], abs_tol=TOL)
+    assert math.isclose(z, p["height"], abs_tol=TOL)
+    # ปริมาตรต้องน้อยกว่าทรงกระบอกตัน = มีรูจริง
+    solid_vol = math.pi * (p["outer_dia"] / 2) ** 2 * p["height"]
+    assert part.volume < solid_vol * 0.85
+    assert_watertight(part, "spacer", tmp_path)
+
+
+def test_spacer_wall_too_thin():
+    mod = load_part("spacer")
+    p = dict(mod.PARAMS, inner_dia=14.0, outer_dia=15.0)
+    with pytest.raises(ValueError):
+        mod.build(p)
+
+
+def test_wall_hook(tmp_path):
+    mod = load_part("wall_hook")
+    p = dict(mod.PARAMS)
+    part = mod.build(p)
+    x, y, z = bbox(part)
+    assert math.isclose(x, p["plate_t"] + p["arm_len"], abs_tol=TOL)
+    assert math.isclose(y, p["plate_w"], abs_tol=TOL)
+    assert math.isclose(z, p["plate_h"], abs_tol=TOL)
+    assert_watertight(part, "wall_hook", tmp_path)
+
+
+def test_box_with_lid(tmp_path):
+    mod = load_part("box_with_lid")
+    p = dict(mod.PARAMS)
+    parts = mod.build(p)
+    bx, by, bz = bbox(parts["box"])
+    assert math.isclose(bx, p["inner_l"] + 2 * p["wall"], abs_tol=TOL)
+    assert math.isclose(by, p["inner_w"] + 2 * p["wall"], abs_tol=TOL)
+    assert math.isclose(bz, p["inner_d"] + p["bottom_t"], abs_tol=TOL)
+    lx, ly, lz = bbox(parts["lid"])
+    # ขอบฝาต้องเล็กกว่าช่องภายในกล่อง = สวมได้จริง
+    assert lx <= bx + TOL and ly <= by + TOL
+    assert math.isclose(lz, p["lid_t"] + p["lip_h"], abs_tol=TOL)
+    assert_watertight(parts["box"], "box", tmp_path)
+    assert_watertight(parts["lid"], "lid", tmp_path)
+
+
+@pytest.mark.parametrize("shaft", ["round", "d", "hex"])
+def test_knob_shafts(tmp_path, shaft):
+    mod = load_part("knob")
+    p = dict(mod.PARAMS, shaft=shaft)
+    part = mod.build(p)
+    x, y, z = bbox(part)
+    assert x <= p["dia"] + TOL and y <= p["dia"] + TOL
+    assert math.isclose(z, p["height"], abs_tol=TOL)
+    assert_watertight(part, f"knob_{shaft}", tmp_path)
+
+
+def test_fdm_hole_compensation():
+    # รูสำหรับแกน 8 mm แบบ slide ต้องใหญ่กว่าแกนจริงเสมอ
+    d = fdm.hole_dia(8.0, fdm.FIT_SLIDE)
+    assert d == pytest.approx(8.0 + fdm.HOLE_COMP + 2 * fdm.FIT_SLIDE)
+    assert d > 8.0
