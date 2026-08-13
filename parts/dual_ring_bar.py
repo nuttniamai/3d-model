@@ -8,7 +8,7 @@
   1) ปลอกเต็มวงสองปลาย (ยึด passive radiator)
   2) สายคาดใต้ท้อง กว้าง ±30° ผนังหนาแค่ 1.0 mm เชื่อมปลอกสองข้าง
   3) ช่วงบานที่สายคาดค่อย ๆ กว้างขึ้นจนกลืนเข้าปลอก
-- สายคาดเจาะ: รูใหญ่ Ø11.2 สองรู, รูจิ๋ว Ø1.25 ห้ารูเรียงกัน (ช่องระบายอากาศ),
+- สายคาดเจาะ: รูใหญ่ Ø10.5 สองรู, รูจิ๋ว Ø1.75 ห้ารูเรียงกัน (ช่องระบายอากาศ),
   สลอตยาว 46.5x15 ฝั่งขวา, รูกลม Ø13.5 บนช่วงบานฝั่งซ้าย
 
 *** สำคัญ: สายคาดเป็นผิวโค้ง ไม่ใช่แผ่นแบน และบางเพียง 1 mm ***
@@ -44,12 +44,13 @@ PARAMS = dict(
     fit="none",        # "none" = ตามไฟล์เดิมเป๊ะ
                        # press/tight/slide/loose = ตีความ ring_bore เป็นขนาด
                        # ชิ้นจริงที่จะสวม แล้วเผื่อค่าหด FDM ให้อัตโนมัติ
-    holes_dia=11.2,    # รูใหญ่ลดน้ำหนัก
+    hole1_dia=10.5,    # รูใหญ่ลดน้ำหนัก (0 = ไม่เจาะ)
     hole1_x=-38.0,
+    hole2_dia=10.5,
     hole2_x=-7.25,
-    holes_z=-0.9,
+    holes_z=-0.9,      # ระดับ z ร่วมของรูใหญ่ทั้งสอง
     vent_n=5,          # รูจิ๋วระบายอากาศเรียงแถว (0 = ไม่เจาะ)
-    vent_dia=1.25,
+    vent_dia=1.75,
     vent_pitch=2.2,
     vent_x=-23.45,     # ศูนย์กลางของแถว
     vent_z=-1.15,
@@ -127,8 +128,9 @@ def _cut_features(part, p):
         sk = Plane.XZ.offset(-100) * Pos(x, z, 0) * shape_2d
         return extrude(sk, 200)
 
-    for hx in (p["hole1_x"], p["hole2_x"]):
-        part -= cut_y(Circle(p["holes_dia"] / 2), hx, p["holes_z"])
+    for hx, hd in ((p["hole1_x"], p["hole1_dia"]), (p["hole2_x"], p["hole2_dia"])):
+        if hd > 0:
+            part -= cut_y(Circle(hd / 2), hx, p["holes_z"])
 
     n = int(p["vent_n"])
     for i in range(n):
@@ -146,8 +148,9 @@ def _cut_features(part, p):
 def _feature_span(p):
     """ขอบซ้ายสุด-ขวาสุดของทุกช่องที่เจาะ (พิกัด x)"""
     xs = []
-    for hx in (p["hole1_x"], p["hole2_x"]):
-        xs += [hx - p["holes_dia"] / 2, hx + p["holes_dia"] / 2]
+    for hx, hd in ((p["hole1_x"], p["hole1_dia"]), (p["hole2_x"], p["hole2_dia"])):
+        if hd > 0:
+            xs += [hx - hd / 2, hx + hd / 2]
     n = int(p["vent_n"])
     if n > 0:
         reach = (n - 1) / 2 * p["vent_pitch"] + p["vent_dia"] / 2
