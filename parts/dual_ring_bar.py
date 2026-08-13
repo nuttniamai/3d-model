@@ -1,60 +1,68 @@
-"""โครงในลำโพง JBL Flip 4 — ปลอกคู่ยึด passive radiator สองข้าง เชื่อมด้วยแผ่นฐาน
-(จำลองจากไฟล์ต้นฉบับที่วัดขนาดด้วย trimesh)
+"""โครงในลำโพง JBL Flip 4 — เปลือกทรงกระบอกผนังบาง มีปลอกยึด passive radiator สองข้าง
 
 อะไหล่แท้: รหัส 55-FLP4H1-0UHB1 "Rubber front casing JBL Flip 4"
 วัสดุเดิม PC+TPU (โครง PC แข็ง หุ้มยาง TPU) — งานปริ้นทดแทนแนะนำ PETG
-หมายเหตุ: Flip 4 มีสองรุ่นย่อย (ก่อน/หลังปี 2017, radiator ยึดต่างกัน
-และใช้แทนกันไม่ได้) — วัดเครื่องของตัวเองก่อนปริ้นเสมอ
 
-โครงสร้าง (แกน X = แนวยาวของชิ้น):
-- ปลอกทรงกระบอก 2 ข้าง แกนรูชี้ตามแนว X (สวมท่อ/แกนได้ทะลุ)
-- แผ่นเชื่อมแบนหนา plate_t วางชิดขอบล่างของวง (ระนาบ XZ, ความหนาตามแกน Y)
-- โคนบาน (bell) เชื่อมแผ่นเข้ากับปลอกทั้งสองข้าง
-- แผ่นเจาะ: รูกลม + สลอตยาว + สลอตตั้งทะลุโคนซ้าย
+โครงสร้างจริง (วัดจากไฟล์ STL ต้นฉบับด้วย trimesh — แกน X = แนวยาวลำโพง):
+- ทั้งชิ้นคือ "ท่อผนังบาง" รัศมีนอก ~30.5 mm ที่ถูกเฉือนออกเกือบหมด เหลือ
+  1) ปลอกเต็มวงสองปลาย (ยึด passive radiator)
+  2) สายคาดใต้ท้อง กว้าง ±30° ผนังหนาแค่ 1.0 mm เชื่อมปลอกสองข้าง
+  3) ช่วงบานที่สายคาดค่อย ๆ กว้างขึ้นจนกลืนเข้าปลอก
+- สายคาดเจาะ: รูใหญ่ Ø11.2 สองรู, รูจิ๋ว Ø1.25 ห้ารูเรียงกัน (ช่องระบายอากาศ),
+  สลอตยาว 44x13.5, สลอตตั้ง 6x13.5 สองช่องบนช่วงบานฝั่งซ้าย
 
-ค่า default ทุกตัววัดจากไฟล์ STL ต้นฉบับ — แก้เฉพาะจุดที่ต้องการได้เลย:
-    python parts/dual_ring_bar.py                 # ตามต้นฉบับ
-    python parts/dual_ring_bar.py --ring-bore 54  # เช่นวัดท่อจริงได้ 54
+*** สำคัญ: สายคาดเป็นผิวโค้ง ไม่ใช่แผ่นแบน และบางเพียง 1 mm ***
+ค่าปลอก/ช่วงบานเป็นค่าประมาณ เพราะ mesh ต้นฉบับหยาบมาก (3998 หน้า ไม่ปิดสนิท)
+ส่วนสายคาดและตำแหน่งรูวัดได้แม่น ใช้ทาบเทียบกับของจริงได้
 
-การปริ้น: หมุนใน Bambu Studio ให้แผ่นราบลงเตียง แล้วเปิด support
-สำหรับส่วนโค้งของปลอกวงแหวน (tree support แนะนำ)
+    python parts/dual_ring_bar.py                    # ทั้งชิ้น
+    python parts/dual_ring_bar.py --section strap    # เฉพาะสายคาด (ทดสอบตำแหน่งรู)
+    python parts/dual_ring_bar.py --section sleeve   # เฉพาะปลอก (ทดสอบความพอดีรู)
 """
 import sys, os, math
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from build123d import (Align, Box, Cone, Cylinder, Plane, Pos, Rot,
-                       SlotOverall, extrude)
+from build123d import (Align, Box, Circle, Cone, Cylinder, Plane, Polygon, Pos,
+                       Rot, SlotOverall, extrude, loft, make_face)
 from partkit import fdm
 
-# ---- พารามิเตอร์ (mm) — วัดจากไฟล์ต้นฉบับ ----
+# ---- พารามิเตอร์ (mm / องศา) — วัดจากไฟล์ต้นฉบับ ----
 PARAMS = dict(
     length=170.3,      # ความยาวรวมทั้งชิ้น
-    ring_od=60.0,      # เส้นผ่านศูนย์กลางนอกปลอก
-    ring_bore=55.0,    # รูในปลอก (ตามไฟล์เดิมเป๊ะ — ดู fit ด้านล่าง)
-    ring_w=13.3,       # ความกว้างปลอกตามแนวแกน
-    neck_len=9.2,      # ความยาวโคนบานจากปลอกเข้าหาแผ่น
-    fit="none",        # "none" = ใช้ ring_bore ตรง ๆ ตามไฟล์เดิม
+    r_out=30.5,        # รัศมีนอกของเปลือกทรงกระบอก
+    wall=1.0,          # ความหนาผนังสายคาด (วัดได้ 1.00 สม่ำเสมอ)
+    strap_ang=30.0,    # ครึ่งมุมความกว้างสายคาด (±30° จากก้น)
+    flare_x=58.0,      # |x| ที่สายคาดเริ่มบานออก
+    flare_ang=90.0,    # ครึ่งมุมตอนจบการบาน (ก่อนกลืนเข้าปลอก)
+    ring_x=74.0,       # |x| ที่ปลอกเต็มวงเริ่ม
+    ring_od_in=60.8,   # Ø นอกปลอก ด้านที่ติดสายคาด
+    ring_od_out=56.4,  # Ø นอกปลอก ที่ปลายสุด (ผิวนอกเรียวเล็กน้อย)
+    ring_seat=44.8,    # Ø บ่ารองด้านใน (แคบสุด อยู่ปลายในของปลอก)
+    ring_bore=54.2,    # Ø รูสวม passive radiator (ช่วงทรงกระบอกปลายนอก)
+    ring_bore_x=81.0,  # |x| ที่กรวยด้านในเปิดจนถึงขนาดรูสวมพอดี
+    fit="none",        # "none" = ตามไฟล์เดิมเป๊ะ
                        # press/tight/slide/loose = ตีความ ring_bore เป็นขนาด
-                       # "ท่อจริงที่จะสวม" แล้วเผื่อค่าหด FDM ให้อัตโนมัติ
-    plate_t=5.7,       # ความหนาแผ่นเชื่อม
-    plate_h=30.4,      # ความสูงแผ่น (แกน Z)
-    plate_drop=0.8,    # แผ่นยื่นต่ำกว่าขอบล่างของวงเท่าไร
-    gusset_rise=6.5,   # ขอบบนโคนบานไต่สูงขึ้นจากผิวในแผ่นเมื่อเข้าใกล้วง
-    holes_n=3,         # รูกลมลดน้ำหนัก (0 = ไม่เจาะ)
-    holes_dia=10.5,
-    holes_pitch=14.75,
-    holes_x=-22.0,     # ศูนย์กลางกลุ่มรู (ลบ = ฝั่งซ้าย)
-    holes_z=-1.0,
-    slot_l=44.0,       # สลอตยาวฝั่งขวา (0 = ไม่เจาะ)
+                       # ชิ้นจริงที่จะสวม แล้วเผื่อค่าหด FDM ให้อัตโนมัติ
+    holes_dia=11.2,    # รูใหญ่ลดน้ำหนัก
+    hole1_x=-36.55,
+    hole2_x=-7.25,
+    holes_z=-0.9,
+    vent_n=5,          # รูจิ๋วระบายอากาศเรียงแถว (0 = ไม่เจาะ)
+    vent_dia=1.25,
+    vent_pitch=2.175,
+    vent_x=-23.45,     # ศูนย์กลางของแถว
+    vent_z=-1.15,
+    slot_l=44.0,       # สลอตยาว (0 = ไม่เจาะ)
     slot_w=13.5,
     slot_x=34.2,
     slot_z=-0.3,
-    vslot_n=2,         # สลอตแนวตั้งทะลุโคนวงซ้าย (0 = ไม่เจาะ)
+    vslot_n=2,         # สลอตตั้งบนช่วงบานฝั่งซ้าย (0 = ไม่เจาะ)
     vslot_w=6.0,
     vslot_h=13.5,
-    vslot_x=-65.2,     # ศูนย์กลางสลอตตั้งช่องแรก
-    vslot_pitch=8.5,   # ระยะห่างช่องถัดไป (ไปทางขวา)
+    vslot_x=-65.2,
+    vslot_pitch=8.45,
     vslot_z=-0.5,
+    section="full",    # full | strap | sleeve — ตัดเฉพาะส่วนมาปริ้นทดสอบ
 )
 
 FITS = dict(press=fdm.FIT_PRESS, tight=fdm.FIT_TIGHT,
@@ -68,85 +76,114 @@ def _bore_dia(p):
     return fdm.hole_dia(p["ring_bore"], FITS[f])
 
 
-def _y_cutter(profile_2d, y_span=200):
-    """เปลี่ยน sketch บนระนาบ XZ เป็นแท่งเจาะทะลุตามแกน Y"""
-    sk = Plane.XZ.offset(-y_span / 2) * profile_2d
-    return extrude(sk, y_span)
+def _sector_face(p, half_ang, x):
+    """หน้าตัดสายคาด: วงแหวนบางเฉือนเหลือช่วงมุม ±half_ang รอบทิศ -Y ที่ตำแหน่ง x
+
+    sketch อยู่บนระนาบ YZ (พิกัด local u=global Y, v=global Z) แล้ว extrude ไปตาม X
+    """
+    plane = Plane.YZ.offset(x)
+    ring = Circle(p["r_out"]) - Circle(p["r_out"] - p["wall"])
+    a = math.radians(half_ang)
+    reach = p["r_out"] * 1.5
+    n = max(8, int(half_ang / 3))
+    pts = [(0.0, 0.0)]
+    for i in range(n + 1):
+        t = -a + 2 * a * i / n
+        pts.append((-reach * math.cos(t), reach * math.sin(t)))
+    wedge = make_face(Polygon(*pts, align=None).wire())
+    return plane * (ring & wedge)
+
+
+def _sleeve(p, bore, side):
+    """ปลอกยึด passive radiator หนึ่งข้าง
+
+    ผิวนอก: กรวยเรียวเล็กน้อยจากด้านสายคาดไปปลายนอก (มุมถอดแม่พิมพ์)
+    ผิวใน:  บ่าแคบที่ปลายใน แล้วเปิดเป็นกรวยออกจนได้ขนาดรูสวม แล้วต่อทรงกระบอก
+    """
+    x_end = p["length"] / 2
+    L = x_end - p["ring_x"]
+    L1 = min(p["ring_bore_x"] - p["ring_x"], L)
+    BOT = (Align.CENTER, Align.CENTER, Align.MIN)
+
+    body = Cone(p["ring_od_in"] / 2, p["ring_od_out"] / 2, L, align=BOT)
+    body -= Cone(p["ring_seat"] / 2, bore / 2, L1, align=BOT)
+    body -= Pos(0, 0, L1) * Cylinder(bore / 2, L - L1 + 1, align=BOT)
+
+    return Pos(side * p["ring_x"], 0, 0) * Rot(0, side * 90, 0) * body
+
+
+def _lay_flat(part):
+    """จัดชิ้นให้อยู่กึ่งกลาง XY และก้นแตะ Z=0 (พร้อมวางเตียงปริ้น)"""
+    bb = part.bounding_box()
+    return Pos(-bb.center().X, -bb.center().Y, -bb.min.Z) * part
+
+
+def _section(part, p, which):
+    """ตัดเฉพาะบางส่วนมาปริ้นทดสอบ พร้อมจัดท่าวางเตียงให้แล้ว"""
+    if which == "strap":
+        # สายคาดช่วงที่มุมคงที่ แล้วพลิกให้โค้งนูนขึ้น (โค้งขึ้น = ไม่ต้อง support)
+        keep = Box(2 * p["flare_x"], 500, 500)
+        return _lay_flat(Rot(-90, 0, 0) * (part & keep))
+
+    if which == "sleeve":
+        # ปลอกขวาเต็มวง ตั้งแกนรูขึ้น (ไม่ต้อง support ใช้เช็คความพอดีรูสวม)
+        x_mid = (p["ring_x"] + p["length"] / 2) / 2
+        keep = Pos(x_mid, 0, 0) * Box(p["length"] / 2 - p["ring_x"], 500, 500)
+        return _lay_flat(Rot(0, 90, 0) * (part & keep))
+
+    raise ValueError(f"section ต้องเป็น full / strap / sleeve (ได้ '{which}')")
 
 
 def build(p):
     bore = _bore_dia(p)
-    wall = (p["ring_od"] - bore) / 2
-    if wall < fdm.MIN_WALL:
+    if p["ring_od_out"] - bore < 2 * fdm.MIN_WALL - 1e-6:   # เผื่อ float noise ที่ขอบพอดี
         raise ValueError(
-            f"ผนังปลอกบางเกินไป: ring_od ต้อง >= {bore + 2 * fdm.MIN_WALL:.1f} mm")
+            f"ผนังปลอกบางเกินไป: ring_od_out ต้อง >= {bore + 2 * fdm.MIN_WALL:.1f} mm")
+    if p["wall"] < 0.4:
+        raise ValueError("wall บางกว่าหัวฉีด 0.4 mm ปริ้นไม่ได้")
 
-    x_out = p["length"] / 2                      # ปลายนอกปลอก
-    x_in = x_out - p["ring_w"]                   # ปลายในปลอก (เริ่มโคน)
-    x_cone = x_in - p["neck_len"]                # โคนจบ ชนแผ่น
-    if x_cone <= 10:
-        raise ValueError("length สั้นเกินไปเมื่อเทียบกับ ring_w + neck_len")
+    x_end = p["length"] / 2
+    if not (0 < p["flare_x"] < p["ring_x"] < x_end):
+        raise ValueError("ต้องเรียงลำดับ flare_x < ring_x < length/2")
 
-    plate_bot = -p["ring_od"] / 2 - p["plate_drop"]   # ผิวนอกแผ่น (y ต่ำสุด)
-    plate_top = plate_bot + p["plate_t"]              # ผิวในแผ่น
+    # ---- สายคาดช่วงมุมคงที่ ----
+    part = extrude(_sector_face(p, p["strap_ang"], -p["flare_x"]),
+                   2 * p["flare_x"])
 
-    # ---- ปลอกวงแหวน 2 ข้าง (แกน X) ----
-    sleeve = Rot(0, 90, 0) * (Cylinder(p["ring_od"] / 2, p["ring_w"])
-                              - Cylinder(bore / 2, p["ring_w"] + 2))
-    ring_cx = x_in + p["ring_w"] / 2
+    # ---- ช่วงบาน: loft จากมุมสายคาดไปมุมที่กว้างขึ้น จนถึงขอบปลอก ----
+    flares = [loft([_sector_face(p, p["strap_ang"], s * p["flare_x"]),
+                    _sector_face(p, p["flare_ang"], s * p["ring_x"])])
+              for s in (1, -1)]
 
-    # ---- แผ่นเชื่อม (ยื่นเข้าเขตโคน/ปลอกเล็กน้อยให้เชื่อมสนิท แล้วคว้านรูซ้ำ) ----
-    plate = Pos(0, plate_bot + p["plate_t"] / 2, 0) * Box(
-        2 * (x_in + 2), p["plate_t"], p["plate_h"])
+    # ---- ปลอกเต็มวงสองข้าง ----
+    rings = [_sleeve(p, bore, s) for s in (1, -1)]
 
-    # ---- โคนบาน: เปลือกกรวยรอบแกน X ตัดเหลือซีกล่างด้วยระนาบเอียง ----
-    def bell(side):
-        h = p["neck_len"] + 1.5                 # จมเข้าปลอก 1.5 mm
-        r_small = p["plate_h"] / 2
-        outer = Cone(r_small, p["ring_od"] / 2, h)
-        inner = Cone(max(r_small - wall, 2), p["ring_od"] / 2 - wall, h + 2)
-        shell = outer - inner
-        # Cone โตจากปลายเล็ก (-Z) ไปปลายใหญ่ (+Z); Rot(0, 90*side, 0)
-        # หันปลายใหญ่ไปทางปลอกของฝั่งนั้น แล้วเลื่อนให้ปลายเล็กอยู่ที่ x_cone
-        shell = Pos(side * (x_cone + h / 2), 0, 0) * Rot(0, 90 * side, 0) * shell
-        # ระนาบตัดเอียง: ผ่าน (x_cone, plate_top) ไต่ขึ้น gusset_rise เมื่อถึงปลอก
-        ang = math.degrees(math.atan2(p["gusset_rise"], p["neck_len"]))
-        keep = Pos(side * x_cone, plate_top, 0) * Rot(0, 0, side * ang) * Box(
-            1000, 1000, 1000, align=(Align.CENTER, Align.MAX, Align.CENTER))
-        return shell & keep
+    part = part.fuse(*flares, *rings, tol=1e-3)
 
-    part = (Pos(ring_cx, 0, 0) * sleeve).fuse(
-        Pos(-ring_cx, 0, 0) * sleeve,
-        plate,
-        bell(+1),
-        bell(-1),
-        tol=1e-3,
-    )
+    # ---- เจาะรู: ทุกรูเจาะทะลุตามแกน Y (ทิศถอดแม่พิมพ์) ----
+    def cut_y(shape_2d, x, z):
+        sk = Plane.XZ.offset(-100) * Pos(x, z, 0) * shape_2d
+        return extrude(sk, 200)
 
-    # ---- คว้านรูปลอกซ้ำให้สะอาด (เฉือนแผ่น/โคนที่ล้ำเข้ารู) ----
-    cut_len = p["ring_w"] + p["neck_len"] + 2
-    bore_cut = Rot(0, 90, 0) * Cylinder(bore / 2, cut_len)
-    for s in (1, -1):
-        part -= Pos(s * (x_out + 1 - cut_len / 2), 0, 0) * bore_cut
+    for hx in (p["hole1_x"], p["hole2_x"]):
+        part -= cut_y(Circle(p["holes_dia"] / 2), hx, p["holes_z"])
 
-    # ---- รูกลม ----
-    n = int(p["holes_n"])
+    n = int(p["vent_n"])
     for i in range(n):
-        x = p["holes_x"] + (i - (n - 1) / 2) * p["holes_pitch"]
-        part -= Pos(x, 0, p["holes_z"]) * Rot(90, 0, 0) * Cylinder(
-            p["holes_dia"] / 2, 200)
+        vx = p["vent_x"] + (i - (n - 1) / 2) * p["vent_pitch"]
+        part -= cut_y(Circle(p["vent_dia"] / 2), vx, p["vent_z"])
 
-    # ---- สลอตยาวแนวนอน ----
     if p["slot_l"] > 0:
-        part -= Pos(p["slot_x"], 0, p["slot_z"]) * _y_cutter(
-            SlotOverall(p["slot_l"], p["slot_w"]))
+        part -= cut_y(SlotOverall(p["slot_l"], p["slot_w"]), p["slot_x"], p["slot_z"])
 
-    # ---- สลอตแนวตั้งทะลุโคน/ปลอกซ้าย ----
     for i in range(int(p["vslot_n"])):
-        x = p["vslot_x"] + i * p["vslot_pitch"]
-        part -= Pos(x, 0, p["vslot_z"]) * _y_cutter(
-            Rot(0, 0, 90) * SlotOverall(p["vslot_h"], p["vslot_w"]))
+        vx = p["vslot_x"] + i * p["vslot_pitch"]
+        part -= cut_y(Rot(0, 0, 90) * SlotOverall(p["vslot_h"], p["vslot_w"]),
+                      vx, p["vslot_z"])
 
+    which = str(p["section"]).lower()
+    if which != "full":
+        return {which: _section(part, p, which)}
     return part
 
 

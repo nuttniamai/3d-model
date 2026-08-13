@@ -123,29 +123,48 @@ def test_dual_ring_bar(tmp_path):
     part = mod.build(p)
     x, y, z = bbox(part)
     assert math.isclose(x, p["length"], abs_tol=TOL)
-    assert math.isclose(y, p["ring_od"] + p["plate_drop"], abs_tol=TOL)
-    assert math.isclose(z, p["ring_od"], abs_tol=TOL)
-    # ปริมาตรน้อยกว่าก้อนตันมาก = ปลอกกลวง + รู/สลอตถูกเจาะจริง
-    assert part.volume < x * y * z * 0.30
+    # รัศมีสูงสุดมาจากเปลือกหรือปลอก แล้วแต่อันไหนใหญ่กว่า
+    assert math.isclose(z, 2 * max(p["r_out"], p["ring_od_in"] / 2), abs_tol=TOL)
+    # เป็นเปลือกผนังบาง ปริมาตรจึงน้อยกว่าก้อนตันมาก
+    assert part.volume < x * y * z * 0.15
     assert_watertight(part, "dual_ring_bar", tmp_path)
+
+
+def test_dual_ring_bar_strap_section(tmp_path):
+    """สายคาดที่ตัดมาปริ้นทดสอบต้องบางตามผนังจริงและวางราบพร้อมปริ้น"""
+    mod = load_part("dual_ring_bar")
+    p = dict(mod.PARAMS, section="strap")
+    strap = mod.build(p)["strap"]
+    x, y, z = bbox(strap)
+    assert math.isclose(x, 2 * p["flare_x"], abs_tol=TOL)
+    # ความสูงรวม = ผนัง + ระยะโก่งของส่วนโค้ง ต้องไม่เกินรัศมี
+    rise = p["r_out"] * (1 - math.cos(math.radians(p["strap_ang"])))
+    assert math.isclose(z, p["wall"] + rise, abs_tol=0.15)
+    assert math.isclose(strap.bounding_box().min.Z, 0.0, abs_tol=TOL)  # ก้นแตะเตียง
+    assert_watertight(strap, "dual_ring_bar_strap", tmp_path)
 
 
 def test_dual_ring_bar_custom(tmp_path):
     mod = load_part("dual_ring_bar")
-    p = dict(mod.PARAMS, length=140.0, ring_od=50.0, ring_bore=44.0,
-             plate_h=26.0, holes_n=2, slot_l=30.0, vslot_n=0, fit="slide")
+    p = dict(mod.PARAMS, length=150.0, flare_x=50.0, ring_x=66.0,
+             vent_n=0, slot_l=30.0, vslot_n=0, fit="slide")
     part = mod.build(p)
     x, y, z = bbox(part)
-    assert math.isclose(x, 140.0, abs_tol=TOL)
-    assert math.isclose(z, 50.0, abs_tol=TOL)
+    assert math.isclose(x, 150.0, abs_tol=TOL)
     assert_watertight(part, "dual_ring_bar_custom", tmp_path)
 
 
 def test_dual_ring_bar_thin_wall():
     mod = load_part("dual_ring_bar")
-    p = dict(mod.PARAMS, ring_bore=59.0, ring_od=60.0)
+    p = dict(mod.PARAMS, ring_bore=56.0, ring_od_out=56.4)
     with pytest.raises(ValueError):
         mod.build(p)
+
+
+def test_dual_ring_bar_bad_section():
+    mod = load_part("dual_ring_bar")
+    with pytest.raises(ValueError):
+        mod.build(dict(mod.PARAMS, section="nope"))
 
 
 def test_fdm_hole_compensation():

@@ -26,7 +26,7 @@ python parts/bracket_L.py --leg-a 60 --thickness 5 --screw M5
 python parts/box_with_lid.py --inner-l 80 --inner-w 50 --inner-d 30
 python parts/knob.py --shaft d --shaft-dia 6 --flat-depth 1.5
 python parts/wall_hook.py --arm-len 40
-python parts/dual_ring_bar.py --ring-bore 54 --fit slide
+python parts/dual_ring_bar.py --section strap    # ตัดเฉพาะสายคาดมาปริ้นทดสอบ
 ```
 
 ไฟล์ผลลัพธ์อยู่ในโฟลเดอร์ `out/` — ได้ 3 ฟอร์แมตต่อชิ้น:
@@ -48,7 +48,7 @@ python parts/dual_ring_bar.py --ring-bore 54 --fit slide
 | `parts/wall_hook.py` | ตะขอแขวนผนังตัว J พร้อมรูสกรู |
 | `parts/box_with_lid.py` | กล่อง+ฝาสวม ระบุขนาด "ภายใน" แล้วคิดค่าเผื่อฝาให้เอง |
 | `parts/knob.py` | ลูกบิดสวมแกนกลม / แกนปาด D / หกเหลี่ยม |
-| `parts/dual_ring_bar.py` | โครงในลำโพง JBL Flip 4 (ปลอกยึด passive radiator คู่ + แผ่นฐาน) |
+| `parts/dual_ring_bar.py` | โครงในลำโพง JBL Flip 4 (เปลือกทรงกระบอก + ปลอกยึด passive radiator) |
 
 ## จุดเด่นเรื่อง true-to-scale
 
