@@ -48,7 +48,7 @@ python parts/dual_ring_bar.py --ring-bore 54 --fit slide
 | `parts/wall_hook.py` | ตะขอแขวนผนังตัว J พร้อมรูสกรู |
 | `parts/box_with_lid.py` | กล่อง+ฝาสวม ระบุขนาด "ภายใน" แล้วคิดค่าเผื่อฝาให้เอง |
 | `parts/knob.py` | ลูกบิดสวมแกนกลม / แกนปาด D / หกเหลี่ยม |
-| `parts/dual_ring_bar.py` | ปลอกวงแหวนคู่เชื่อมด้วยแผ่นข้าง+โคนบาน (วัดขนาดจากไฟล์ต้นฉบับ) |
+| `parts/dual_ring_bar.py` | โครงในลำโพง JBL Flip 4 (ปลอกยึด passive radiator คู่ + แผ่นฐาน) |
 
 ## จุดเด่นเรื่อง true-to-scale
 
