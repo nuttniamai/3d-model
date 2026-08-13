@@ -1,42 +1,54 @@
-"""วงแหวนคู่เชื่อมด้วยคานกลาง (ทรงก้านสูบ/con-rod) — คอบานแนบวงแหวนอัตโนมัติ
-พร้อมรูกลมและช่อง slot ลดน้ำหนักบนคาน
+"""ปลอกวงแหวนคู่เชื่อมด้วยแผ่นข้าง — จำลองจากไฟล์ต้นฉบับที่วัดขนาดด้วย trimesh
 
-ชิ้นถูกสร้างใน "ท่านอนปริ้น": ความหนาชิ้นอยู่ตามแกน Z (รู/slot เจาะทะลุแกน Z)
-วงแหวนสองข้างเอียงบานออกได้ตาม ring_tilt
+โครงสร้าง (แกน X = แนวยาวของชิ้น):
+- ปลอกทรงกระบอก 2 ข้าง แกนรูชี้ตามแนว X (สวมท่อ/แกนได้ทะลุ)
+- แผ่นเชื่อมแบนหนา plate_t วางชิดขอบล่างของวง (ระนาบ XZ, ความหนาตามแกน Y)
+- โคนบาน (bell) เชื่อมแผ่นเข้ากับปลอกทั้งสองข้าง
+- แผ่นเจาะ: รูกลม + สลอตยาว + สลอตตั้งทะลุโคนซ้าย
 
-โครงร่างแนวราบสร้างด้วย convex hull ระหว่างสี่เหลี่ยมคานกับวงกลมวงแหวน
-ทำให้ได้เส้นบานเฉียงแนบวงพอดีทุกสัดส่วน โดยไม่มีผิวสัมผัสแบบ tangent
-ที่ทำให้ boolean ของ CAD kernel เสื่อม
+ค่า default ทุกตัววัดจากไฟล์ STL ต้นฉบับ — แก้เฉพาะจุดที่ต้องการได้เลย:
+    python parts/dual_ring_bar.py                 # ตามต้นฉบับ
+    python parts/dual_ring_bar.py --ring-bore 54  # เช่นวัดท่อจริงได้ 54
 
-    python parts/dual_ring_bar.py --span 160 --ring-id 42 --ring-od 55
-วัดของจริงแล้ว override ได้ทุกค่า: python parts/dual_ring_bar.py --help
+การปริ้น: หมุนใน Bambu Studio ให้แผ่นราบลงเตียง แล้วเปิด support
+สำหรับส่วนโค้งของปลอกวงแหวน (tree support แนะนำ)
 """
-import sys, os
+import sys, os, math
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from build123d import (Circle, Cylinder, GeomType, Plane, Pos, Rectangle, Rot,
-                       SlotOverall, extrude, fillet, make_hull)
+from build123d import (Align, Box, Cone, Cylinder, Plane, Pos, Rot,
+                       SlotOverall, extrude)
 from partkit import fdm
 
-# ---- พารามิเตอร์ (mm) — ค่า default กะจากสัดส่วนภาพ วัดของจริงแล้วแก้ได้เลย ----
+# ---- พารามิเตอร์ (mm) — วัดจากไฟล์ต้นฉบับ ----
 PARAMS = dict(
-    span=160.0,       # ระยะห่างศูนย์กลางวงแหวนซ้าย-ขวา
-    ring_id=42.0,     # รูในวงแหวน = ขนาด "ของจริง" ที่จะสวม (เผื่อ FDM ให้อัตโนมัติ)
-    ring_od=55.0,     # ขอบนอกวงแหวน
-    ring_w=16.0,      # ความหนาวงแหวนตามแนวแกนรู
-    ring_tilt=12.0,   # องศาที่วงแหวนเอียงบานออก (0 = ตั้งตรง)
-    fit="slide",      # ความแน่นรูสวม: press / tight / slide / loose
-    beam_h=30.0,      # ความสูงหน้าตัดคานกลาง (แนวราบ)
-    beam_t=10.0,      # ความหนาคาน (แกน Z ทิศเจาะรู)
-    neck_len=25.0,    # ระยะคานตรงก่อนเริ่มบานเข้าหาวงแหวน
-    holes_n=3,        # จำนวนรูกลมลดน้ำหนัก (0 = ไม่เจาะ)
-    holes_dia=12.0,   # ขนาดรูกลม
-    holes_pitch=17.0, # ระยะห่างศูนย์กลางรูกลม
-    holes_x=-32.0,    # ตำแหน่งศูนย์กลางกลุ่มรูกลม (ลบ = ฝั่งซ้าย)
-    slot_l=45.0,      # ความยาวรวมช่อง slot (0 = ไม่เจาะ)
-    slot_w=14.0,      # ความกว้างช่อง slot
-    slot_x=32.0,      # ตำแหน่งศูนย์กลาง slot (บวก = ฝั่งขวา)
-    edge_r=1.5,       # ลบคมขอบวงแหวน (0 = คมตรง)
+    length=170.3,      # ความยาวรวมทั้งชิ้น
+    ring_od=60.0,      # เส้นผ่านศูนย์กลางนอกปลอก
+    ring_bore=55.0,    # รูในปลอก (ตามไฟล์เดิมเป๊ะ — ดู fit ด้านล่าง)
+    ring_w=13.3,       # ความกว้างปลอกตามแนวแกน
+    neck_len=9.2,      # ความยาวโคนบานจากปลอกเข้าหาแผ่น
+    fit="none",        # "none" = ใช้ ring_bore ตรง ๆ ตามไฟล์เดิม
+                       # press/tight/slide/loose = ตีความ ring_bore เป็นขนาด
+                       # "ท่อจริงที่จะสวม" แล้วเผื่อค่าหด FDM ให้อัตโนมัติ
+    plate_t=5.7,       # ความหนาแผ่นเชื่อม
+    plate_h=30.4,      # ความสูงแผ่น (แกน Z)
+    plate_drop=0.8,    # แผ่นยื่นต่ำกว่าขอบล่างของวงเท่าไร
+    gusset_rise=6.5,   # ขอบบนโคนบานไต่สูงขึ้นจากผิวในแผ่นเมื่อเข้าใกล้วง
+    holes_n=3,         # รูกลมลดน้ำหนัก (0 = ไม่เจาะ)
+    holes_dia=10.5,
+    holes_pitch=14.75,
+    holes_x=-22.0,     # ศูนย์กลางกลุ่มรู (ลบ = ฝั่งซ้าย)
+    holes_z=-1.0,
+    slot_l=44.0,       # สลอตยาวฝั่งขวา (0 = ไม่เจาะ)
+    slot_w=13.5,
+    slot_x=34.2,
+    slot_z=-0.3,
+    vslot_n=2,         # สลอตแนวตั้งทะลุโคนวงซ้าย (0 = ไม่เจาะ)
+    vslot_w=6.0,
+    vslot_h=13.5,
+    vslot_x=-65.2,     # ศูนย์กลางสลอตตั้งช่องแรก
+    vslot_pitch=8.5,   # ระยะห่างช่องถัดไป (ไปทางขวา)
+    vslot_z=-0.5,
 )
 
 FITS = dict(press=fdm.FIT_PRESS, tight=fdm.FIT_TIGHT,
@@ -44,75 +56,90 @@ FITS = dict(press=fdm.FIT_PRESS, tight=fdm.FIT_TIGHT,
 
 
 def _bore_dia(p):
-    """ขนาดรูสวมจริงหลังเผื่อค่าหด FDM และความแน่นที่เลือก"""
-    return fdm.hole_dia(p["ring_id"], FITS[str(p["fit"]).lower()])
+    f = str(p["fit"]).lower()
+    if f in ("none", ""):
+        return p["ring_bore"]
+    return fdm.hole_dia(p["ring_bore"], FITS[f])
 
 
-def _ring(p):
-    """วงแหวนแกน Z ศูนย์กลางที่ origin ลบคมขอบแล้ว"""
-    bore = _bore_dia(p)
-    if p["ring_od"] - bore < 2 * fdm.MIN_WALL:
-        raise ValueError(
-            f"ผนังวงแหวนบางเกินไป: ring_od ต้อง >= {bore + 2 * fdm.MIN_WALL:.1f} mm")
-    ring = (Cylinder(p["ring_od"] / 2, p["ring_w"])
-            - Cylinder(bore / 2, p["ring_w"] + 1))
-    if p["edge_r"] > 0:
-        # ลบคมเฉพาะขอบนอก — ห้าม fillet ขอบรูใน เพราะผิว fillet จะสัมผัสแนบ
-        # กับทรงกระบอกที่ใช้เจาะรูซ้ำใน build() ทำให้ boolean เกิด sliver
-        outer = [e for e in ring.edges().filter_by(GeomType.CIRCLE)
-                 if e.radius > (p["ring_od"] + bore) / 4]
-        ring = fillet(outer, min(p["edge_r"], p["ring_w"] / 4))
-    return ring
-
-
-def _web(p, half):
-    """คาน + คอบาน เป็นแผ่นหนา beam_t: hull ของสี่เหลี่ยมคานกับวงกลมใต้วงแหวน
-
-    วงกลม hull เล็กกว่าขอบนอกวงแหวน 2 mm เพื่อให้ปลายคอ "ฝังใน" เนื้อวงแหวนเสมอ
-    (แม้วงแหวนจะเอียง) — ผิวตัดกันแบบตั้งฉาก ไม่มีจุดเฉียด (tangent) ให้ kernel พัง
-    """
-    hull_r = p["ring_od"] / 2 - 2.0
-    if hull_r < 3:
-        raise ValueError("ring_od เล็กเกินไป")
-    beam_half_len = half - p["ring_od"] / 2 - p["neck_len"]
-    if beam_half_len <= 5:
-        raise ValueError("span สั้นเกินไปเมื่อเทียบกับ ring_od + neck_len")
-    rect = Rectangle(2 * beam_half_len, p["beam_h"])
-    profile = None
-    for s in (1, -1):
-        edges = list(rect.edges()) + list((Pos(s * half, 0, 0) * Circle(hull_r)).edges())
-        h = make_hull(edges)
-        profile = h if profile is None else profile + h
-    return extrude(profile, p["beam_t"] / 2, both=True)
+def _y_cutter(profile_2d, y_span=200):
+    """เปลี่ยน sketch บนระนาบ XZ เป็นแท่งเจาะทะลุตามแกน Y"""
+    sk = Plane.XZ.offset(-y_span / 2) * profile_2d
+    return extrude(sk, y_span)
 
 
 def build(p):
-    half = p["span"] / 2
+    bore = _bore_dia(p)
+    wall = (p["ring_od"] - bore) / 2
+    if wall < fdm.MIN_WALL:
+        raise ValueError(
+            f"ผนังปลอกบางเกินไป: ring_od ต้อง >= {bore + 2 * fdm.MIN_WALL:.1f} mm")
 
-    # ---- วงแหวน 2 ข้าง เอียงบานออก + แผ่นคาน/คอบาน ----
-    ring = _ring(p)
-    part = (Pos(half, 0, 0) * Rot(0, p["ring_tilt"], 0) * ring).fuse(
-        Pos(-half, 0, 0) * Rot(0, -p["ring_tilt"], 0) * ring,
-        _web(p, half),
+    x_out = p["length"] / 2                      # ปลายนอกปลอก
+    x_in = x_out - p["ring_w"]                   # ปลายในปลอก (เริ่มโคน)
+    x_cone = x_in - p["neck_len"]                # โคนจบ ชนแผ่น
+    if x_cone <= 10:
+        raise ValueError("length สั้นเกินไปเมื่อเทียบกับ ring_w + neck_len")
+
+    plate_bot = -p["ring_od"] / 2 - p["plate_drop"]   # ผิวนอกแผ่น (y ต่ำสุด)
+    plate_top = plate_bot + p["plate_t"]              # ผิวในแผ่น
+
+    # ---- ปลอกวงแหวน 2 ข้าง (แกน X) ----
+    sleeve = Rot(0, 90, 0) * (Cylinder(p["ring_od"] / 2, p["ring_w"])
+                              - Cylinder(bore / 2, p["ring_w"] + 2))
+    ring_cx = x_in + p["ring_w"] / 2
+
+    # ---- แผ่นเชื่อม (ยื่นเข้าเขตโคน/ปลอกเล็กน้อยให้เชื่อมสนิท แล้วคว้านรูซ้ำ) ----
+    plate = Pos(0, plate_bot + p["plate_t"] / 2, 0) * Box(
+        2 * (x_in + 2), p["plate_t"], p["plate_h"])
+
+    # ---- โคนบาน: เปลือกกรวยรอบแกน X ตัดเหลือซีกล่างด้วยระนาบเอียง ----
+    def bell(side):
+        h = p["neck_len"] + 1.5                 # จมเข้าปลอก 1.5 mm
+        r_small = p["plate_h"] / 2
+        outer = Cone(r_small, p["ring_od"] / 2, h)
+        inner = Cone(max(r_small - wall, 2), p["ring_od"] / 2 - wall, h + 2)
+        shell = outer - inner
+        # Cone โตจากปลายเล็ก (-Z) ไปปลายใหญ่ (+Z); Rot(0, 90*side, 0)
+        # หันปลายใหญ่ไปทางปลอกของฝั่งนั้น แล้วเลื่อนให้ปลายเล็กอยู่ที่ x_cone
+        shell = Pos(side * (x_cone + h / 2), 0, 0) * Rot(0, 90 * side, 0) * shell
+        # ระนาบตัดเอียง: ผ่าน (x_cone, plate_top) ไต่ขึ้น gusset_rise เมื่อถึงปลอก
+        ang = math.degrees(math.atan2(p["gusset_rise"], p["neck_len"]))
+        keep = Pos(side * x_cone, plate_top, 0) * Rot(0, 0, side * ang) * Box(
+            1000, 1000, 1000, align=(Align.CENTER, Align.MAX, Align.CENTER))
+        return shell & keep
+
+    part = (Pos(ring_cx, 0, 0) * sleeve).fuse(
+        Pos(-ring_cx, 0, 0) * sleeve,
+        plate,
+        bell(+1),
+        bell(-1),
         tol=1e-3,
     )
 
-    # ---- เจาะรูวงแหวนซ้ำ: เฉือนแผ่นคานส่วนที่พาดผ่านรู ให้รูสวมสะอาดพอดีขนาด ----
-    bore_cut = Cylinder(_bore_dia(p) / 2, p["ring_w"] + p["beam_t"] + 4)
-    part -= Pos(half, 0, 0) * Rot(0, p["ring_tilt"], 0) * bore_cut
-    part -= Pos(-half, 0, 0) * Rot(0, -p["ring_tilt"], 0) * bore_cut
+    # ---- คว้านรูปลอกซ้ำให้สะอาด (เฉือนแผ่น/โคนที่ล้ำเข้ารู) ----
+    cut_len = p["ring_w"] + p["neck_len"] + 2
+    bore_cut = Rot(0, 90, 0) * Cylinder(bore / 2, cut_len)
+    for s in (1, -1):
+        part -= Pos(s * (x_out + 1 - cut_len / 2), 0, 0) * bore_cut
 
-    # ---- รูกลมลดน้ำหนัก ----
+    # ---- รูกลม ----
     n = int(p["holes_n"])
     for i in range(n):
         x = p["holes_x"] + (i - (n - 1) / 2) * p["holes_pitch"]
-        part -= Pos(x, 0, 0) * Cylinder(p["holes_dia"] / 2, p["beam_t"] + 2)
+        part -= Pos(x, 0, p["holes_z"]) * Rot(90, 0, 0) * Cylinder(
+            p["holes_dia"] / 2, 200)
 
-    # ---- ช่อง slot ยาว ----
+    # ---- สลอตยาวแนวนอน ----
     if p["slot_l"] > 0:
-        sk = Plane.XY.offset(-p["beam_t"]) * Pos(p["slot_x"], 0, 0) * SlotOverall(
-            p["slot_l"], p["slot_w"])
-        part -= extrude(sk, 2 * p["beam_t"])
+        part -= Pos(p["slot_x"], 0, p["slot_z"]) * _y_cutter(
+            SlotOverall(p["slot_l"], p["slot_w"]))
+
+    # ---- สลอตแนวตั้งทะลุโคน/ปลอกซ้าย ----
+    for i in range(int(p["vslot_n"])):
+        x = p["vslot_x"] + i * p["vslot_pitch"]
+        part -= Pos(x, 0, p["vslot_z"]) * _y_cutter(
+            Rot(0, 0, 90) * SlotOverall(p["vslot_h"], p["vslot_w"]))
 
     return part
 

@@ -122,28 +122,28 @@ def test_dual_ring_bar(tmp_path):
     p = dict(mod.PARAMS)
     part = mod.build(p)
     x, y, z = bbox(part)
-    # ความยาวรวม ~ span + ring_od (บวกผลจากมุมเอียงเล็กน้อย)
-    assert p["span"] <= x <= p["span"] + p["ring_od"] + p["ring_w"]
-    assert math.isclose(y, p["ring_od"], abs_tol=TOL)
-    # ปริมาตรน้อยกว่าก้อนตัน = รู/slot/บอร์วงแหวนถูกเจาะจริง
-    assert part.volume < x * y * z * 0.35
+    assert math.isclose(x, p["length"], abs_tol=TOL)
+    assert math.isclose(y, p["ring_od"] + p["plate_drop"], abs_tol=TOL)
+    assert math.isclose(z, p["ring_od"], abs_tol=TOL)
+    # ปริมาตรน้อยกว่าก้อนตันมาก = ปลอกกลวง + รู/สลอตถูกเจาะจริง
+    assert part.volume < x * y * z * 0.30
     assert_watertight(part, "dual_ring_bar", tmp_path)
 
 
 def test_dual_ring_bar_custom(tmp_path):
     mod = load_part("dual_ring_bar")
-    p = dict(mod.PARAMS, span=120.0, ring_od=40.0, ring_id=30.0,
-             ring_tilt=0.0, holes_n=2, slot_l=30.0)
+    p = dict(mod.PARAMS, length=140.0, ring_od=50.0, ring_bore=44.0,
+             plate_h=26.0, holes_n=2, slot_l=30.0, vslot_n=0, fit="slide")
     part = mod.build(p)
     x, y, z = bbox(part)
-    assert math.isclose(x, 120.0 + 40.0, abs_tol=0.2)  # tilt 0 -> span + ring_od พอดี
-    assert math.isclose(z, p["ring_w"], abs_tol=TOL)
+    assert math.isclose(x, 140.0, abs_tol=TOL)
+    assert math.isclose(z, 50.0, abs_tol=TOL)
     assert_watertight(part, "dual_ring_bar_custom", tmp_path)
 
 
 def test_dual_ring_bar_thin_wall():
     mod = load_part("dual_ring_bar")
-    p = dict(mod.PARAMS, ring_id=54.0, ring_od=55.0)
+    p = dict(mod.PARAMS, ring_bore=59.0, ring_od=60.0)
     with pytest.raises(ValueError):
         mod.build(p)
 
